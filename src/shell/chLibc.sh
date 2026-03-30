@@ -81,12 +81,28 @@ parse_args() {
     exit 1
   fi
 
-  INPUT_ELF_PATH=$1
+  ELF_PATH=$(realpath $1)
   GLIBC_VERSION=$2
 }
 
+# check
+check() {
+  if ! command -v patchelf &> /dev/null; then
+    error "patchelf 未安装，请先安装！"
+    exit 1
+  fi
+
+  if [[ ! -d "$GLIBC_ALL_IN_ONE_PATH" ]]; then
+    error "glibc-all-in-one 路径不存在：$GLIBC_ALL_IN_ONE_PATH"
+    exit 1
+  fi
+}
+
+
 main() {
+  check
   parse_args "$@"
+
 }
 
 main "$@"
