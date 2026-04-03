@@ -87,7 +87,7 @@ parse_args() {
 
 # check
 check() {
-  if ! command -v patchelf &> /dev/null; then
+  if ! command -v patchelf &>/dev/null; then
     error "patchelf 未安装，请先安装！"
     exit 1
   fi
@@ -98,10 +98,43 @@ check() {
   fi
 }
 
+# detect ELF architecture (amd64 or i386)
+detect_arch() {
+  local elf_path=$1
+  local machine
+
+  machine=$(readelf -h "$elf_path" 2>/dev/null | grep "Machine:" | awk '{print $NF}')
+
+  case "$machine" in
+  X86-64)
+    if [[ "$VERBOS" == "true" ]]; then
+      info "该程序架构为：$machine"
+    fi
+    ARCH=amd64
+    ;;
+  80386)
+    if [[ "$VERBOS" == "true" ]]; then
+      info "改程序架构为：$machine"
+    fi
+    ARCH=i386
+    ;;
+  *)
+    error "不支持架构：$machine"
+    exit 1
+    ;;
+  esac
+}
+
+# fing glibc dir
+
+# backup_elf
+
+# change glibc
 
 main() {
-  check
   parse_args "$@"
+  check
+  detect_arch "$ELF_PATH"
 
 }
 
