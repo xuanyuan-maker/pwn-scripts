@@ -144,19 +144,35 @@ find_glibc_dir() {
     exit 1
   fi
 
-  # if multiple matches, use the first one (or could prompt user)
+  # if multiple matches, let user choose
   if [[ ${#matches[@]} -gt 1 ]]; then
-    warn "找到多个匹配的版本，使用第一个: ${matches[0]##*/}"
-    if [[ "$VERBOS" == "true" ]]; then
-      info "所有匹配项："
-      printf '  %s\n' "${matches[@]##*/}" >&2
-    fi
-  fi
+    warn "找到多个匹配的版本，请选择一个："
+    local i
+    for ((i = 0; i < ${#matches[@]}; i++)); do
+      printf '  [%d] %s\n' $((i + 1)) "${matches[$i]##*/}"
+    done
 
-  GLIBC_DIR="${matches[0]}"
+    local choice
+    while true; do
+      read -rp "请输入编号 (1-${#matches[@]}): " choice
+      if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 1 ]] && [[ "$choice" -le ${#matches[@]} ]]; then
+        break
+      fi
+      warn "无效输入，请输入 1 到 ${#matches[@]} 之间的数字"
+    done
+
+    GLIBC_DIR="${matches[$((choice - 1))]}"
+    info "已选择: ${GLIBC_DIR##*/}"
+  else
+    GLIBC_DIR="${matches[0]}"
+  fi
+  LIBC_PATH="$GLIBC_DIR/libc-${version}.so"
+  LD_PATH="$GLIBC_DIR/ld-${version}.so"
 
   if [[ "$VERBOS" == "true" ]]; then
     info "使用 glibc 目录: $GLIBC_DIR"
+    info "要更换的动态库：$LIBC_PATH"
+    info "要更换的链接器：$LD_PATH"
   fi
 }
 
@@ -182,12 +198,33 @@ backup_elf() {
 }
 
 # change glibc
+change_glibc() {
+  if [[ "$VERBOS" == "true" ]]; then
+    info "正在更换动态库"
+  fi
+
+  if patchelf --replace-needed libc.so.6 "$LIBC_PATH" "$ELF_PATH"; then
+    success "动态库更换成功"
+  else
+    error "动态库更换失败"
+    exit 1
+  fi
+
+  if patchelf --set-interpreter "$LD_PATH" "$ELF_PATH"; then
+    success "链接器更换成功"
+  else
+    error "链接器更换失败"
+    exit 1
+  fi
+}
 
 main() {
   parse_args "$@"
   check
   detect_arch "$ELF_PATH"
-
+  find_glibc_dir "$GLIBC_VERSION" "$ARCH"
+  backup_elf "$ELF_PATH"
+  change_glibc
 }
 
 main "$@"
