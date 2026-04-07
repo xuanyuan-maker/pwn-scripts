@@ -126,8 +126,60 @@ detect_arch() {
 }
 
 # fing glibc dir
+find_glibc_dir() {
+  local version="$1"
+  local arch="$2"
+  local libs_path="$GLIBC_ALL_IN_ONE_PATH/libs"
+
+  # find directories matching version pattern: {version}*_{arch}
+  local matches=()
+  while IFS= read -r -d '' dir; do
+    matches+=("$dir")
+  done < <(find "$libs_path" -maxdepth 1 -type d -name "${version}*_${arch}" -print0 2>/dev/null)
+
+  if [[ ${#matches[@]} -eq 0 ]]; then
+    error "未找到版本 $version ($arch) 的 glibc"
+    info "可用版本列表："
+    ls -1 "$libs_path" | grep "_${arch}$" | sed 's/^/  /' >&2
+    exit 1
+  fi
+
+  # if multiple matches, use the first one (or could prompt user)
+  if [[ ${#matches[@]} -gt 1 ]]; then
+    warn "找到多个匹配的版本，使用第一个: ${matches[0]##*/}"
+    if [[ "$VERBOS" == "true" ]]; then
+      info "所有匹配项："
+      printf '  %s\n' "${matches[@]##*/}" >&2
+    fi
+  fi
+
+  GLIBC_DIR="${matches[0]}"
+
+  if [[ "$VERBOS" == "true" ]]; then
+    info "使用 glibc 目录: $GLIBC_DIR"
+  fi
+}
 
 # backup_elf
+backup_elf() {
+  local original_path="$1"
+  local backup_path="${original_path}.bak"
+
+  if [[ -f "$backup_path" ]]; then
+    warn "备份文件已经存在：$backup_path"
+  fi
+
+  cp "$original_path" "$backup_path"
+
+  if [[ ! -f "$backup_path" ]]; then
+    error "备份失败！"
+    exit 1
+  fi
+
+  if [[ "$VERBOS" == "true" ]]; then
+    info "已备份到: $backup_path"
+  fi
+}
 
 # change glibc
 
