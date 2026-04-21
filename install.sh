@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# install.sh - 安装脚本，将 bin 目录添加到 PATH
+# install.sh - 安装脚本，生成 bin 命令并将其添加到 PATH
 
 # 颜色
 RED='\033[0;31m'
@@ -59,6 +59,45 @@ get_bin_path() {
     echo "${script_dir}/bin"
 }
 
+# 获取 src 目录的绝对路径
+get_src_path() {
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    echo "${script_dir}/src"
+}
+
+# 将 src 中的脚本复制到 bin，去除后缀并赋予可执行权限
+sync_scripts_to_bin() {
+    local src_path="$1"
+    local bin_path="$2"
+    local copied_count=0
+
+    mkdir -p "$bin_path"
+
+    while IFS= read -r -d '' src_file; do
+        local filename
+        filename="$(basename "$src_file")"
+
+        local cmd_name="${filename%.*}"
+        local target_path="${bin_path}/${cmd_name}"
+
+        if [[ -e "$target_path" && ! -f "$target_path" ]]; then
+            warn "跳过 ${target_path}：目标不是普通文件"
+            continue
+        fi
+
+        cp "$src_file" "$target_path"
+        chmod +x "$target_path"
+        copied_count=$((copied_count + 1))
+    done < <(find "$src_path" -type f \( -name "*.py" -o -name "*.sh" \) -print0)
+
+    if [[ "$copied_count" -eq 0 ]]; then
+        warn "未在 ${src_path} 中找到 .py 或 .sh 脚本"
+    else
+        success "已同步 ${copied_count} 个脚本到 bin 目录"
+    fi
+}
+
 # 将 bin 目录添加到 PATH
 add_to_path() {
     local bin_path="$1"
@@ -90,17 +129,23 @@ add_to_path() {
 
 main() {
     info "开始安装..."
-    
-    local bin_path
-    bin_path="$(get_bin_path)"
-    
-    if [[ ! -d "$bin_path" ]]; then
-        error "bin 目录不存在: $bin_path"
+
+    local src_path
+    src_path="$(get_src_path)"
+
+    if [[ ! -d "$src_path" ]]; then
+        error "src 目录不存在: $src_path"
         exit 1
     fi
-    
+
+    local bin_path
+    bin_path="$(get_bin_path)"
+
+    info "src 目录: $src_path"
     info "bin 目录: $bin_path"
-    
+
+    sync_scripts_to_bin "$src_path" "$bin_path"
+
     local rc_file
     rc_file="$(get_shell_rc)"
     
