@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage:
 #   chLibc [OPTION] <ELF_PATH> <GLIBC_VERSION>
 
-GLIBC_ALL_IN_ONE_PATH="${GLIBC_ALL_IN_ONE_PATH:-$HOME/glibc-all-in-one}"
+GLIBC_ALL_IN_ONE_PATH="${GLIBC_ALL_IN_ONE_PATH:-$HOME/Res/glibcs}"
 
 # Default config
 VERBOSE=false
@@ -210,11 +210,11 @@ detect_arch() {
   machine="$(readelf -h "$elf_path" 2>/dev/null | awk -F: '/Machine:/{gsub(/^[ \t]+/, "", $2); print $2}')"
 
   case "$machine" in
-    X86-64)
+    *X86-64*)
       ARCH=amd64
       [[ "$VERBOSE" == "true" ]] && info "该程序架构为: $machine"
       ;;
-    80386)
+    *80386*)
       ARCH=i386
       [[ "$VERBOSE" == "true" ]] && info "该程序架构为: $machine"
       ;;
@@ -272,13 +272,38 @@ find_glibc_dir() {
     GLIBC_DIR="${matches[0]}"
   fi
 
-  LIBC_PATH="$GLIBC_DIR/libc-${version}.so"
-  LD_PATH="$GLIBC_DIR/ld-${version}.so"
+  # 新版 glibc-all-in-one 将库文件放入架构三元组子目录中
+  # (amd64 -> x86_64-linux-gnu, i386 -> i386-linux-gnu)，并统一使用
+  # SONAME 命名 (libc.so.6 / ld-linux*.so)，旧版则直接位于版本目录下
+  # 且使用版本号命名 (libc-2.XX.so / ld-2.XX.so)。
+  local triple ld_name lib_dir
+  case "$arch" in
+    amd64) triple="x86_64-linux-gnu"; ld_name="ld-linux-x86-64.so.2" ;;
+    i386)  triple="i386-linux-gnu";   ld_name="ld-linux.so.2" ;;
+    *)     error "不支持架构: $arch"; exit 1 ;;
+  esac
+
+  if [[ -d "$GLIBC_DIR/$triple" ]]; then
+    lib_dir="$GLIBC_DIR/$triple"
+  else
+    lib_dir="$GLIBC_DIR"   # 兼容旧版布局
+  fi
+
+  # 优先使用 SONAME 命名，回退到版本号命名
+  LIBC_PATH="$lib_dir/libc.so.6"
+  [[ -f "$LIBC_PATH" ]] || LIBC_PATH="$lib_dir/libc-${version}.so"
+
+  LD_PATH="$lib_dir/$ld_name"
+  [[ -f "$LD_PATH" ]] || LD_PATH="$lib_dir/ld-${version}.so"
 
   if [[ ! -f "$LIBC_PATH" || ! -f "$LD_PATH" ]]; then
-    error "目标 glibc 目录缺少 libc 或 ld 文件: $GLIBC_DIR"
+    error "目标 glibc 目录缺少 libc 或 ld 文件: $lib_dir"
     exit 1
   fi
+
+  # 解析符号链接，得到真实文件的绝对路径
+  LIBC_PATH="$(realpath "$LIBC_PATH")"
+  LD_PATH="$(realpath "$LD_PATH")"
 
   if [[ "$VERBOSE" == "true" ]]; then
     info "使用 glibc 目录: $GLIBC_DIR"
