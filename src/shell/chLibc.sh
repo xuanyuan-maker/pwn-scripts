@@ -44,6 +44,14 @@ success() {
   echo -e "${GREEN}[SUCCESS]${RESET} $1"
 }
 
+# verbose info：仅在 -v 模式打印。
+# 必须显式 return 0，否则在 set -e 下，当 VERBOSE=false 时
+# `[[ ... ]]` 返回 1 会作为函数/分支的最终退出码导致脚本意外退出。
+vinfo() {
+  [[ "$VERBOSE" == "true" ]] && info "$1"
+  return 0
+}
+
 usage() {
   cat <<EOF
 Usage: $0 [OPTION] <ELF_PATH> <GLIBC_VERSION>
@@ -212,11 +220,11 @@ detect_arch() {
   case "$machine" in
     *X86-64*)
       ARCH=amd64
-      [[ "$VERBOSE" == "true" ]] && info "该程序架构为: $machine"
+      vinfo "该程序架构为: $machine"
       ;;
     *80386*)
       ARCH=i386
-      [[ "$VERBOSE" == "true" ]] && info "该程序架构为: $machine"
+      vinfo "该程序架构为: $machine"
       ;;
     *)
       error "不支持架构: $machine"
@@ -272,10 +280,6 @@ find_glibc_dir() {
     GLIBC_DIR="${matches[0]}"
   fi
 
-  # 新版 glibc-all-in-one 将库文件放入架构三元组子目录中
-  # (amd64 -> x86_64-linux-gnu, i386 -> i386-linux-gnu)，并统一使用
-  # SONAME 命名 (libc.so.6 / ld-linux*.so)，旧版则直接位于版本目录下
-  # 且使用版本号命名 (libc-2.XX.so / ld-2.XX.so)。
   local triple ld_name lib_dir
   case "$arch" in
     amd64) triple="x86_64-linux-gnu"; ld_name="ld-linux-x86-64.so.2" ;;
@@ -286,10 +290,8 @@ find_glibc_dir() {
   if [[ -d "$GLIBC_DIR/$triple" ]]; then
     lib_dir="$GLIBC_DIR/$triple"
   else
-    lib_dir="$GLIBC_DIR"   # 兼容旧版布局
+    lib_dir="$GLIBC_DIR"
   fi
-
-  # 优先使用 SONAME 命名，回退到版本号命名
   LIBC_PATH="$lib_dir/libc.so.6"
   [[ -f "$LIBC_PATH" ]] || LIBC_PATH="$lib_dir/libc-${version}.so"
 
@@ -300,8 +302,6 @@ find_glibc_dir() {
     error "目标 glibc 目录缺少 libc 或 ld 文件: $lib_dir"
     exit 1
   fi
-
-  # 解析符号链接，得到真实文件的绝对路径
   LIBC_PATH="$(realpath "$LIBC_PATH")"
   LD_PATH="$(realpath "$LD_PATH")"
 
@@ -328,7 +328,7 @@ backup_elf() {
     exit 1
   fi
 
-  [[ "$VERBOSE" == "true" ]] && info "已备份到: $backup_path"
+  vinfo "已备份到: $backup_path"
 }
 
 change_glibc() {

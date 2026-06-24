@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# install.sh - 安装脚本，生成 bin 命令并将其添加到 PATH
+# install.sh - 安装脚本，将 bin 中的脚本软链接到 ~/.local/bin/
 
 # 颜色
 RED='\033[0;31m'
@@ -26,18 +26,17 @@ success() {
     echo -e "${GREEN}[SUCCESS]${RESET} $1"
 }
 
-# 获取当前 shell
 get_shell_rc() {
     local shell_path="${SHELL:-}"
-    
+
     if [[ -z "$shell_path" ]]; then
         error "无法获取 SHELL 环境变量"
         exit 1
     fi
-    
+
     local shell_name
     shell_name=$(basename "$shell_path")
-    
+
     case "$shell_name" in
         bash)
             echo "$HOME/.bashrc"
@@ -52,21 +51,18 @@ get_shell_rc() {
     esac
 }
 
-# 获取 bin 目录的绝对路径
 get_bin_path() {
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     echo "${script_dir}/bin"
 }
 
-# 获取 src 目录的绝对路径
 get_src_path() {
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     echo "${script_dir}/src"
 }
 
-# 将 src 中的脚本复制到 bin，去除后缀并赋予可执行权限
 sync_scripts_to_bin() {
     local src_path="$1"
     local bin_path="$2"
@@ -98,31 +94,55 @@ sync_scripts_to_bin() {
     fi
 }
 
-# 将 bin 目录添加到 PATH
-add_to_path() {
+symlink_to_local_bin() {
     local bin_path="$1"
-    local rc_file="$2"
-    
-    # 检查是否已经在 PATH 中
-    if [[ ":$PATH:" == *":${bin_path}:"* ]]; then
-        info "bin 目录已在 PATH 中: $bin_path"
+    local local_bin="$HOME/.local/bin"
+    local symlink_count=0
+
+    mkdir -p "$local_bin"
+
+    while IFS= read -r -d '' bin_file; do
+        local name
+        name="$(basename "$bin_file")"
+        local link_path="${local_bin}/${name}"
+
+        if [[ -L "$link_path" ]]; then
+            rm -f "$link_path"
+        elif [[ -e "$link_path" ]]; then
+            warn "跳过 ${link_path}：已存在非符号链接文件"
+            continue
+        fi
+
+        ln -s "$bin_file" "$link_path"
+        symlink_count=$((symlink_count + 1))
+    done < <(find "$bin_path" -maxdepth 1 -type f -print0 2>/dev/null)
+
+    if [[ "$symlink_count" -gt 0 ]]; then
+        success "已创建 ${symlink_count} 个符号链接到 ${local_bin}"
+    fi
+}
+
+add_local_bin_to_path() {
+    local local_bin="$HOME/.local/bin"
+    local rc_file="$1"
+
+    if [[ ":$PATH:" == *":${local_bin}:"* ]]; then
+        info "~/.local/bin 已在 PATH 中"
         return 0
     fi
-    
-    # 检查是否已经在 rc 文件中
-    if [[ -f "$rc_file" ]] && grep -q "$bin_path" "$rc_file" 2>/dev/null; then
-        warn "bin 目录已添加到 $rc_file，但可能未生效"
+
+    if [[ -f "$rc_file" ]] && grep -q "$local_bin" "$rc_file" 2>/dev/null; then
+        warn "~/.local/bin 已添加到 $rc_file，但可能未生效"
         info "请运行: source $rc_file"
         return 0
     fi
-    
-    # 添加到 rc 文件
-    local export_line="export PATH=\"$bin_path:\$PATH\""
+
+    local export_line="export PATH=\"$local_bin:\$PATH\""
     echo "" >> "$rc_file"
     echo "# Added by pwn-scripts install.sh" >> "$rc_file"
     echo "$export_line" >> "$rc_file"
-    
-    success "已将 bin 目录添加到 $rc_file"
+
+    success "已将 ~/.local/bin 添加到 $rc_file"
     info "请运行以下命令使配置生效:"
     echo "  source $rc_file"
 }
@@ -145,14 +165,15 @@ main() {
     info "bin 目录: $bin_path"
 
     sync_scripts_to_bin "$src_path" "$bin_path"
+    symlink_to_local_bin "$bin_path"
 
     local rc_file
     rc_file="$(get_shell_rc)"
-    
+
     info "检测到 shell rc 文件: $rc_file"
-    
-    add_to_path "$bin_path" "$rc_file"
-    
+
+    add_local_bin_to_path "$rc_file"
+
     success "安装完成！"
 }
 
