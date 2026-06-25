@@ -51,16 +51,22 @@ get_shell_rc() {
     esac
 }
 
-get_bin_path() {
+get_script_dir() {
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    echo "${script_dir}/bin"
+    echo "$script_dir"
+}
+
+get_bin_path() {
+    echo "$(get_script_dir)/bin"
 }
 
 get_src_path() {
-    local script_dir
-    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    echo "${script_dir}/src"
+    echo "$(get_script_dir)/src"
+}
+
+get_gdb_script_path() {
+    echo "$(get_script_dir)/gdb/glibc-debug.py"
 }
 
 sync_scripts_to_bin() {
@@ -147,6 +153,33 @@ add_local_bin_to_path() {
     echo "  source $rc_file"
 }
 
+install_gdbinit_source() {
+    local gdb_script="$1"
+    local gdbinit="$HOME/.gdbinit"
+    local source_line="source $gdb_script"
+    local config_path
+    config_path="$(dirname "$gdb_script")/config.json"
+
+    if [[ ! -f "$gdb_script" ]]; then
+        warn "GDB 脚本不存在，跳过: $gdb_script"
+        return 0
+    fi
+
+    touch "$gdbinit"
+
+    if grep -Fxq "$source_line" "$gdbinit" 2>/dev/null; then
+        info "GDB glibc 调试符号脚本已在 ~/.gdbinit 中加载"
+    else
+        printf '\n# Added by pwn-scripts install.sh\n%s\n' "$source_line" >>"$gdbinit"
+        success "已在 ~/.gdbinit 中加载 GDB glibc 调试符号脚本"
+    fi
+
+    if [[ ! -f "$config_path" ]]; then
+        warn "未找到 GDB 配置文件: $config_path"
+        info "请参考 $(dirname "$gdb_script")/config.example.json 创建 config.json"
+    fi
+}
+
 main() {
     info "开始安装..."
 
@@ -173,6 +206,10 @@ main() {
     info "检测到 shell rc 文件: $rc_file"
 
     add_local_bin_to_path "$rc_file"
+
+    local gdb_script
+    gdb_script="$(get_gdb_script_path)"
+    install_gdbinit_source "$gdb_script"
 
     success "安装完成！"
 }

@@ -1,0 +1,3 @@
+{
+  "glibc_libs_dir": "/absolute/path/to/glibcs/libs"
+}
