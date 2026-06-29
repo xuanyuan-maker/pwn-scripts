@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 import datetime
-from math import exp
 import stat
 import subprocess
 import sys
@@ -62,14 +61,26 @@ def scripts_dir_from_self() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-# 全局变量：模板文件路径
-TEMPLATES_PATH = scripts_dir_from_self() / "templates" / "exp.py"
+# 全局变量：模板目录
+TEMPLATES_DIR = scripts_dir_from_self() / "templates"
+
+# 模板类型 -> 模板文件名
+TEMPLATE_BY_TYPE = {
+    "": "exp.py",
+    "heap": "exp_heap.py",
+}
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        eprint("用法：pwninit ELF_PATH")
+    if len(sys.argv) not in (2, 3):
+        eprint("用法：pwninit ELF_PATH [heap]")
         return 2
+
+    tpl_type = sys.argv[2] if len(sys.argv) == 3 else ""
+    if tpl_type not in TEMPLATE_BY_TYPE:
+        eprint(f"[WARN] 未知模板类型：{tpl_type}（可选：heap，留空为默认）")
+        return 2
+    tql = TEMPLATES_DIR / TEMPLATE_BY_TYPE[tpl_type]
 
     elf = Path(sys.argv[1]).expanduser()
     if not elf.exists() or not elf.is_file():
@@ -95,7 +106,6 @@ def main() -> int:
         eprint(f"[WARN] 架构识别失败：{e}")
 
     # copy exp.py
-    tql = TEMPLATES_PATH
     if not tql.exists():
         eprint(f"[WARN] 找不到exp模板：{tql}")
         return 4
@@ -103,7 +113,11 @@ def main() -> int:
     template_text = tql.read_text(encoding="utf-8", errors="replace")
 
     # 替换占位符
-    filled = template_text.replace("[ARCH]", arch).replace("[ELF_PATH]", str(elf_abs))
+    filled = (
+        template_text.replace("[ARCH]", arch)
+        .replace("[ELF_PATH]", str(elf_abs))
+        .replace("[PWNKIT_PATH]", str(scripts_dir_from_self()))
+    )
 
     out_path = (elf_dir / "exp.py").resolve()
 
